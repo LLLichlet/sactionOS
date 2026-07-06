@@ -1,0 +1,66 @@
+---
+Language: Cpp
+BasedOnStyle: Google
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+
+# K&R: function braces on new line, control-flow braces on same line
+BreakBeforeBraces: Linux
+
+# Pointer/reference alignment: int *p (left)
+PointerAlignment: Left
+ReferenceAlignment: Left
+
+# Braces around single statements in if/else/for/while
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+
+# Keep case labels indented
+IndentCaseLabels: false
+
+# Access modifiers at same indent as class
+AccessModifierOffset: -4
+
+# Don't break after return type in function definitions
+AlwaysBreakAfterReturnType: None
+
+# Max empty lines
+MaxEmptyLinesToKeep: 1
+
+# Include sorting (off -- headers are not self-contained yet)
+SortIncludes: false
+
+# Spaces
+SpaceAfterCStyleCast: true
+SpaceBeforeParens: ControlStatements
+
+# Alignments
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+
+# Penalties (higher = less likely to break)
+PenaltyBreakBeforeFirstCallParameter: 1
+PenaltyBreakComment: 300
+PenaltyBreakString: 1000
+PenaltyExcessCharacter: 1000000
+PenaltyReturnTypeOnItsOwnLine: 200
+
+# Don't break after short function return types
+AlwaysBreakAfterDefinitionReturnType: None
+
+# Bin packing for function arguments
+BinPackParameters: true
+BinPackArguments: true
+
+# Allow one-line functions
+AllowShortFunctionsOnASingleLine: None
+
+# Allow short case labels
+AllowShortCaseLabelsOnASingleLine: false
+---
+# Assembly files: don't format
+Language: ObjC
+DisableFormat: true
+...

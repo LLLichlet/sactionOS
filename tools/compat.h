@@ -4,10 +4,11 @@
 
 #include <string.h>
 
-#define index(s, c)  strchr((s), (c))
-#define bzero(p, n)  memset((p), 0, (n))
+#define index(s, c) strchr((s), (c))
+#define bzero(p, n) memset((p), 0, (n))
 
-static inline void bcopy(const void *src, void *dst, unsigned int n) {
+static inline void bcopy(const void* src, void* dst, unsigned int n)
+{
     memmove(dst, src, n);
 }
 
