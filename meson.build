@@ -1,0 +1,505 @@
+project(
+  'sactionOS',
+  'c',
+  version: '0.1.0',
+  default_options: [
+    'buildtype=debug',
+    'warning_level=3',
+    'c_std=gnu99',
+    'optimization=2',
+  ],
+  meson_version: '>=1.0.0',
+)
+
+# ============================================================================
+# Part 1: Tool discovery
+# ============================================================================
+
+prog_objcopy = find_program('llvm-objcopy')
+prog_objdump = find_program('llvm-objdump')
+prog_ld      = find_program('ld.lld')
+prog_python  = find_program('python3', 'python')
+
+root_inc = include_directories('include')
+
+scripts_dir = meson.current_source_dir() / 'scripts'
+
+# ============================================================================
+# Part 2: Compiler flags
+# ============================================================================
+
+# Cross-compile to i686-elf bare metal.
+# nostdinc: we provide all headers in include/ (no libc headers needed).
+xv6_base_c_args = [
+  '--target=i686-elf',
+  '-m32',
+  '-ffreestanding',
+  '-nostdinc',
+  '-fno-pic',
+  '-fno-builtin',
+  '-fno-strict-aliasing',
+  '-Wall',
+  '-ggdb',
+  '-Wno-unused-command-line-argument',
+  '-fno-omit-frame-pointer',
+  '-mno-mmx',
+  '-mno-sse',
+]
+
+# -O2 for kernel and user programs
+xv6_o2_c_args = xv6_base_c_args + ['-O2']
+
+# -Os for bootblock (must fit in 510 bytes)
+xv6_os_c_args = xv6_base_c_args + ['-Os']
+
+# Optional flags -- detect support but don't fail if missing
+cc = meson.get_compiler('c')
+foreach opt : ['-fno-stack-protector']
+  if cc.has_argument(opt)
+    xv6_o2_c_args += opt
+    xv6_os_c_args += opt
+  endif
+endforeach
+
+# ============================================================================
+# Part 3: Generated sources (vectors.S)
+# ============================================================================
+
+gen_vectors = custom_target('vectors.S',
+  output: 'vectors.S',
+  command: [prog_python, scripts_dir / 'gen_vectors.py'],
+  capture: true,
+)
+
+# ============================================================================
+# Part 4: Kernel
+# ============================================================================
+
+# 4a: Entry object (must come first in link order)
+entry_lib = static_library('entry_obj',
+  'kernel/entry.S',
+  c_args: xv6_o2_c_args,
+  include_directories: root_inc,
+  pic: false,
+)
+
+# 4b: Kernel core objects (all .c + asm + generated vectors)
+kernel_core_lib = static_library('kernel_core_objs',
+  # Kernel C sources
+  'kernel/bio.c',
+  'kernel/console.c',
+  'kernel/exec.c',
+  'kernel/file.c',
+  'kernel/fs.c',
+  'kernel/ide.c',
+  'kernel/ioapic.c',
+  'kernel/kalloc.c',
+  'kernel/kbd.c',
+  'kernel/lapic.c',
+  'kernel/log.c',
+  'kernel/main.c',
+  'kernel/mp.c',
+  'kernel/picirq.c',
+  'kernel/pipe.c',
+  'kernel/proc.c',
+  'kernel/sleeplock.c',
+  'kernel/spinlock.c',
+  'kernel/string.c',
+  'kernel/syscall.c',
+  'kernel/sysfile.c',
+  'kernel/sysproc.c',
+  'kernel/trap.c',
+  'kernel/uart.c',
+  'kernel/vm.c',
+  # Kernel assembly (excluding entry.S)
+  'kernel/swtch.S',
+  'kernel/trapasm.S',
+  # Generated interrupt vectors
+  gen_vectors,
+  c_args: xv6_o2_c_args,
+  include_directories: root_inc,
+  pic: false,
+)
+
+# 4c: initcode (first user process, embedded as raw binary)
+initcode_lib = static_library('initcode_obj',
+  'kernel/initcode.S',
+  c_args: xv6_o2_c_args,
+  include_directories: root_inc,
+  pic: false,
+)
+
+initcode_elf = custom_target('initcode_elf',
+  output: 'initcode_elf',
+  input: initcode_lib.extract_all_objects(recursive: false),
+  command: [prog_ld, '-m', 'elf_i386', '--image-base', '0',
+            '-N', '-e', 'start', '-Ttext', '0',
+            '-o', '@OUTPUT@', '@INPUT@'],
+)
+
+initcode_bin = custom_target('initcode',
+  output: 'initcode',
+  input: initcode_elf,
+  command: [prog_objcopy, '-S', '-O', 'binary', '-j', '.text',
+            '@INPUT@', '@OUTPUT@'],
+)
+
+# 4d: entryother (AP CPU startup code, embedded as raw binary)
+entryother_lib = static_library('entryother_obj',
+  'kernel/entryother.S',
+  c_args: xv6_o2_c_args,
+  include_directories: root_inc,
+  pic: false,
+)
+
+entryother_elf = custom_target('entryother_elf',
+  output: 'entryother_elf',
+  input: entryother_lib.extract_all_objects(recursive: false),
+  command: [prog_ld, '-m', 'elf_i386', '--image-base', '0',
+            '-N', '-e', 'start', '-Ttext', '0x7000',
+            '-o', '@OUTPUT@', '@INPUT@'],
+)
+
+entryother_bin = custom_target('entryother',
+  output: 'entryother',
+  input: entryother_elf,
+  command: [prog_objcopy, '-S', '-O', 'binary', '-j', '.text',
+            '@INPUT@', '@OUTPUT@'],
+)
+
+# 4e: Kernel ELF -- link via ld.lld with kernel.ld, embedding binary blobs
+kernel_ld_script = meson.current_source_dir() / 'kernel.ld'
+
+kernel_elf = custom_target('kernel',
+  build_by_default: true,
+  output: 'kernel',
+  input: [
+    entry_lib.extract_all_objects(recursive: false),
+    kernel_core_lib.extract_all_objects(recursive: false),
+    initcode_bin,
+    entryother_bin,
+  ],
+  command: [
+    prog_python, scripts_dir / 'link_kernel.py',
+    '--ld', prog_ld.full_path(),
+    '--script', kernel_ld_script,
+    '--output', '@OUTPUT@',
+    '@INPUT@',
+  ],
+  depends: [entry_lib, kernel_core_lib, initcode_bin, entryother_bin],
+)
+
+# Kernel disassembly (for debugging)
+kernel_asm = custom_target('kernel.asm',
+  output: 'kernel.asm',
+  input: kernel_elf,
+  command: [prog_objdump, '-S', '@INPUT@'],
+  capture: true,
+  build_by_default: false,
+)
+
+# ============================================================================
+# Part 5: Bootblock
+# ============================================================================
+
+# Bootblock uses -O (not -O2) to stay within 510 bytes
+bootasm_lib = static_library('bootasm_obj',
+  'boot/bootasm.S',
+  c_args: xv6_os_c_args,
+  include_directories: root_inc,
+  pic: false,
+)
+
+bootmain_lib = static_library('bootmain_obj',
+  'boot/bootmain.c',
+  c_args: xv6_os_c_args,
+  include_directories: root_inc,
+  pic: false,
+)
+
+bootblock_elf = custom_target('bootblock.o',
+  output: 'bootblock.o',
+  input: [
+    bootasm_lib.extract_all_objects(recursive: false),
+    bootmain_lib.extract_all_objects(recursive: false),
+  ],
+  command: [prog_ld, '-m', 'elf_i386', '--image-base', '0',
+            '-N', '-e', 'start', '-Ttext', '0x7C00',
+            '-o', '@OUTPUT@', '@INPUT@'],
+)
+
+bootblock_raw = custom_target('bootblock_unsigned',
+  output: 'bootblock_unsigned',
+  input: bootblock_elf,
+  command: [prog_objcopy, '-S', '-O', 'binary', '-j', '.text',
+            '@INPUT@', '@OUTPUT@'],
+)
+
+bootblock = custom_target('bootblock',
+  build_by_default: true,
+  output: 'bootblock',
+  input: bootblock_raw,
+  command: [prog_python, scripts_dir / 'sign.py', '@INPUT@', '@OUTPUT@'],
+)
+
+# ============================================================================
+# Part 6: User programs
+# ============================================================================
+
+# 6a: User library (ulib) -- compiled once, linked into every user program
+ulib_full_lib = static_library('ulib_full_objs',
+  'user/ulib.c',
+  'user/usys.S',
+  'user/printf.c',
+  'user/umalloc.c',
+  c_args: xv6_o2_c_args,
+  include_directories: root_inc,
+  pic: false,
+)
+
+# Stripped-down ulib for forktest (ulib.o + usys.o only)
+ulib_only_lib = static_library('ulib_only_obj',
+  'user/ulib.c',
+  c_args: xv6_o2_c_args,
+  include_directories: root_inc,
+  pic: false,
+)
+
+usys_only_lib = static_library('usys_only_obj',
+  'user/usys.S',
+  c_args: xv6_o2_c_args,
+  include_directories: root_inc,
+  pic: false,
+)
+
+# 6b: User programs (14 standard + 1 special)
+user_progs = {
+  '_cat':       'user/cat.c',
+  '_echo':      'user/echo.c',
+  '_grep':      'user/grep.c',
+  '_init':      'user/init.c',
+  '_kill':      'user/kill.c',
+  '_ln':        'user/ln.c',
+  '_ls':        'user/ls.c',
+  '_mkdir':     'user/mkdir.c',
+  '_rm':        'user/rm.c',
+  '_sh':        'user/sh.c',
+  '_stressfs':  'user/stressfs.c',
+  '_usertests': 'user/usertests.c',
+  '_wc':        'user/wc.c',
+  '_zombie':    'user/zombie.c',
+}
+
+all_user_elfs = []
+
+foreach name, src : user_progs
+  prog_lib = static_library(name + '_obj',
+    src,
+    c_args: xv6_o2_c_args,
+    include_directories: root_inc,
+    pic: false,
+  )
+
+  user_elf = custom_target(name,
+    output: name,
+    input: [
+      prog_lib.extract_all_objects(recursive: false),
+      ulib_full_lib.extract_all_objects(recursive: false),
+    ],
+    command: [
+      prog_python, scripts_dir / 'link_user.py',
+      '--ld', prog_ld.full_path(),
+      '--output', '@OUTPUT@',
+      '--objs', '@INPUT@',
+    ],
+    depends: [prog_lib, ulib_full_lib],
+    build_by_default: true,
+  )
+  all_user_elfs += user_elf
+endforeach
+
+# 6c: forktest -- special link with reduced ulib (no printf, no umalloc)
+forktest_lib = static_library('forktest_obj',
+  'user/forktest.c',
+  c_args: xv6_o2_c_args,
+  include_directories: root_inc,
+  pic: false,
+)
+
+forktest_elf = custom_target('_forktest',
+  output: '_forktest',
+  input: [
+    forktest_lib.extract_all_objects(recursive: false),
+    ulib_only_lib.extract_all_objects(recursive: false),
+    usys_only_lib.extract_all_objects(recursive: false),
+  ],
+  command: [
+    prog_python, scripts_dir / 'link_user.py',
+    '--ld', prog_ld.full_path(),
+    '--output', '@OUTPUT@',
+    '--objs', '@INPUT@',
+  ],
+  depends: [forktest_lib, ulib_only_lib, usys_only_lib],
+  build_by_default: true,
+)
+
+# ============================================================================
+# Part 7: Host tools (mkfs)
+# ============================================================================
+
+# mkfs runs on the BUILD machine, not the target -- use native: true.
+# It needs xv6 headers (types.h, fs.h, stat.h, param.h) but must NOT pick up
+# xv6 versions of system headers (fcntl.h, stat.h).  Use -idirafter so the
+# system include dirs win when the same header name exists in both places.
+mkfs_exe = executable('mkfs',
+  'tools/mkfs.c',
+  native: true,
+  c_args: [
+    '-Wall',
+    '-Wno-error=implicit-function-declaration',
+    '-Wno-builtin-declaration-mismatch',
+    '-Wno-sign-compare',
+    '-idirafter', meson.current_source_dir() / 'include',
+    '-include', meson.current_source_dir() / 'tools' / 'compat.h',
+  ],
+)
+
+# ============================================================================
+# Part 8: Filesystem image + disk image
+# ============================================================================
+
+user_prog_names = [
+  '_cat', '_echo', '_forktest', '_grep', '_init',
+  '_kill', '_ln', '_ls', '_mkdir', '_rm', '_sh',
+  '_stressfs', '_usertests', '_wc', '_zombie',
+]
+
+# Build the list of user program ELF paths
+all_user_targets = []
+foreach name : user_prog_names
+  if name == '_forktest'
+    all_user_targets += forktest_elf
+  else
+    all_user_targets += all_user_elfs
+  endif
+endforeach
+
+fs_img = custom_target('fs.img',
+  output: 'fs.img',
+  input: [all_user_elfs, forktest_elf],
+  command: [
+    prog_python, '-c',
+    'import shutil, subprocess, sys;
+shutil.copy2(sys.argv[1], "README");
+subprocess.run(sys.argv[2:])',
+    '@CURRENT_SOURCE_DIR@/README',
+    mkfs_exe,
+    '@OUTPUT@',
+    'README',
+    '_cat', '_echo', '_forktest', '_grep', '_init',
+    '_kill', '_ln', '_ls', '_mkdir', '_rm', '_sh',
+    '_stressfs', '_usertests', '_wc', '_zombie',
+  ],
+  depends: [mkfs_exe, all_user_elfs, forktest_elf],
+  build_by_default: true,
+)
+
+xv6_img = custom_target('xv6.img',
+  output: 'xv6.img',
+  input: [bootblock, kernel_elf],
+  command: [
+    prog_python, scripts_dir / 'make_disk.py',
+    '--output', '@OUTPUT@',
+    '--bootblock', '@INPUT0@',
+    '--kernel', '@INPUT1@',
+  ],
+  depends: [bootblock, kernel_elf],
+  build_by_default: true,
+)
+
+# ============================================================================
+# Part 9: Run targets + kernelmemfs (optional)
+# ============================================================================
+
+qemu = get_option('qemu_binary')
+smp = get_option('smp_cpus')
+mem = get_option('qemu_memory')
+qemu_extra = get_option('qemu_extra_args')
+
+qemu_base_opts = [
+  '-drive', 'file=' + fs_img.full_path() + ',index=1,media=disk,format=raw',
+  '-drive', 'file=' + xv6_img.full_path() + ',index=0,media=disk,format=raw',
+  '-smp', smp.to_string(),
+  '-m', mem,
+]
+
+if qemu_extra != ''
+  qemu_base_opts += qemu_extra.split()
+endif
+
+run_target('qemu',
+  command: [qemu, '-serial', 'mon:stdio'] + qemu_base_opts,
+  depends: [fs_img, xv6_img],
+)
+
+run_target('qemu-nox',
+  command: [qemu, '-nographic'] + qemu_base_opts,
+  depends: [fs_img, xv6_img],
+)
+
+# ============================================================================
+# Part 10: kernelmemfs variant (optional)
+# ============================================================================
+
+if get_option('build_kernelmemfs')
+  memide_lib = static_library('memide_obj',
+    'kernel/memide.c',
+    c_args: xv6_o2_c_args,
+    include_directories: root_inc,
+    pic: false,
+  )
+
+  kernelmemfs_elf = custom_target('kernelmemfs',
+    output: 'kernelmemfs',
+    input: [
+      entry_lib.extract_all_objects(recursive: false),
+      kernel_core_lib.extract_all_objects(recursive: false),
+      memide_lib.extract_all_objects(recursive: false),
+      initcode_bin,
+      entryother_bin,
+      fs_img,
+    ],
+    command: [
+      prog_python, scripts_dir / 'link_kernel_memfs.py',
+      '--ld', prog_ld.full_path(),
+      '--script', kernel_ld_script,
+      '--output', '@OUTPUT@',
+      '@INPUT@',
+    ],
+    depends: [entry_lib, kernel_core_lib, memide_lib,
+              initcode_bin, entryother_bin, fs_img],
+  )
+
+  xv6memfs_img = custom_target('xv6memfs.img',
+    output: 'xv6memfs.img',
+    input: [bootblock, kernelmemfs_elf],
+    command: [
+      prog_python, scripts_dir / 'make_disk.py',
+      '--output', '@OUTPUT@',
+      '--bootblock', '@INPUT0@',
+      '--kernel', '@INPUT1@',
+    ],
+    depends: [bootblock, kernelmemfs_elf],
+  )
+
+  run_target('qemu-memfs',
+    command: [
+      qemu,
+      '-drive',
+      'file=' + xv6memfs_img.full_path() + ',index=0,media=disk,format=raw',
+      '-smp', smp.to_string(),
+      '-m', '256',
+    ],
+    depends: [xv6memfs_img],
+  )
+endif

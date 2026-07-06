@@ -1,0 +1,31 @@
+option('smp_cpus',
+  type: 'integer',
+  value: 2,
+  min: 1,
+  max: 8,
+  description: 'Number of emulated CPUs for QEMU (-smp N)',
+)
+
+option('qemu_memory',
+  type: 'string',
+  value: '512',
+  description: 'Memory size in MB for QEMU (-m N)',
+)
+
+option('qemu_extra_args',
+  type: 'string',
+  value: '',
+  description: 'Additional QEMU arguments',
+)
+
+option('qemu_binary',
+  type: 'string',
+  value: 'qemu-system-i386',
+  description: 'Path or name of the QEMU emulator',
+)
+
+option('build_kernelmemfs',
+  type: 'boolean',
+  value: false,
+  description: 'Build kernelmemfs variant (disk image embedded in kernel)',
+)
