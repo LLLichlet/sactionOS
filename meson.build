@@ -88,7 +88,6 @@ kernel_core_lib = static_library('kernel_core_objs',
   # Kernel C sources
   'kernel/bio.c',
   'kernel/console.c',
-  'kernel/exec.c',
   'kernel/file.c',
   'kernel/fs.c',
   'kernel/ide.c',
@@ -100,14 +99,11 @@ kernel_core_lib = static_library('kernel_core_objs',
   'kernel/main.c',
   'kernel/mp.c',
   'kernel/picirq.c',
-  'kernel/pipe.c',
   'kernel/proc.c',
   'kernel/sleeplock.c',
   'kernel/spinlock.c',
   'kernel/string.c',
   'kernel/syscall.c',
-  'kernel/sysfile.c',
-  'kernel/sysproc.c',
   'kernel/trap.c',
   'kernel/uart.c',
   'kernel/vm.c',
@@ -121,30 +117,7 @@ kernel_core_lib = static_library('kernel_core_objs',
   pic: false,
 )
 
-# 4c: initcode (first user process, embedded as raw binary)
-initcode_lib = static_library('initcode_obj',
-  'kernel/initcode.S',
-  c_args: xv6_o2_c_args,
-  include_directories: root_inc,
-  pic: false,
-)
-
-initcode_elf = custom_target('initcode_elf',
-  output: 'initcode_elf',
-  input: initcode_lib.extract_all_objects(recursive: false),
-  command: [prog_ld, '-m', 'elf_i386', '--image-base', '0',
-            '-N', '-e', 'start', '-Ttext', '0',
-            '-o', '@OUTPUT@', '@INPUT@'],
-)
-
-initcode_bin = custom_target('initcode',
-  output: 'initcode',
-  input: initcode_elf,
-  command: [prog_objcopy, '-S', '-O', 'binary', '-j', '.text',
-            '@INPUT@', '@OUTPUT@'],
-)
-
-# 4d: entryother (AP CPU startup code, embedded as raw binary)
+# 4c: entryother (AP CPU startup code, embedded as raw binary)
 entryother_lib = static_library('entryother_obj',
   'kernel/entryother.S',
   c_args: xv6_o2_c_args,
@@ -176,7 +149,6 @@ kernel_elf = custom_target('kernel',
   input: [
     entry_lib.extract_all_objects(recursive: false),
     kernel_core_lib.extract_all_objects(recursive: false),
-    initcode_bin,
     entryother_bin,
   ],
   command: [
@@ -186,7 +158,7 @@ kernel_elf = custom_target('kernel',
     '--output', '@OUTPUT@',
     '@INPUT@',
   ],
-  depends: [entry_lib, kernel_core_lib, initcode_bin, entryother_bin],
+  depends: [entry_lib, kernel_core_lib, entryother_bin],
 )
 
 # Kernel disassembly (for debugging)
@@ -243,105 +215,12 @@ bootblock = custom_target('bootblock',
 )
 
 # ============================================================================
-# Part 6: User programs
+# Part 6: User space -- TODO: implement after redesigning syscall interface
 # ============================================================================
+#
+# No user programs yet.  The kernel will boot and idle in the scheduler
+# waiting for RUNNABLE processes.
 
-# 6a: User library (ulib) -- compiled once, linked into every user program
-ulib_full_lib = static_library('ulib_full_objs',
-  'user/ulib.c',
-  'user/usys.S',
-  'user/printf.c',
-  'user/umalloc.c',
-  c_args: xv6_o2_c_args,
-  include_directories: root_inc,
-  pic: false,
-)
-
-# Stripped-down ulib for forktest (ulib.o + usys.o only)
-ulib_only_lib = static_library('ulib_only_obj',
-  'user/ulib.c',
-  c_args: xv6_o2_c_args,
-  include_directories: root_inc,
-  pic: false,
-)
-
-usys_only_lib = static_library('usys_only_obj',
-  'user/usys.S',
-  c_args: xv6_o2_c_args,
-  include_directories: root_inc,
-  pic: false,
-)
-
-# 6b: User programs (14 standard + 1 special)
-user_progs = {
-  '_cat':       'user/cat.c',
-  '_echo':      'user/echo.c',
-  '_grep':      'user/grep.c',
-  '_init':      'user/init.c',
-  '_kill':      'user/kill.c',
-  '_ln':        'user/ln.c',
-  '_ls':        'user/ls.c',
-  '_mkdir':     'user/mkdir.c',
-  '_rm':        'user/rm.c',
-  '_sh':        'user/sh.c',
-  '_stressfs':  'user/stressfs.c',
-  '_usertests': 'user/usertests.c',
-  '_wc':        'user/wc.c',
-  '_zombie':    'user/zombie.c',
-}
-
-all_user_elfs = []
-
-foreach name, src : user_progs
-  prog_lib = static_library(name + '_obj',
-    src,
-    c_args: xv6_o2_c_args,
-    include_directories: root_inc,
-    pic: false,
-  )
-
-  user_elf = custom_target(name,
-    output: name,
-    input: [
-      prog_lib.extract_all_objects(recursive: false),
-      ulib_full_lib.extract_all_objects(recursive: false),
-    ],
-    command: [
-      prog_python, scripts_dir / 'link_user.py',
-      '--ld', prog_ld.full_path(),
-      '--output', '@OUTPUT@',
-      '--objs', '@INPUT@',
-    ],
-    depends: [prog_lib, ulib_full_lib],
-    build_by_default: true,
-  )
-  all_user_elfs += user_elf
-endforeach
-
-# 6c: forktest -- special link with reduced ulib (no printf, no umalloc)
-forktest_lib = static_library('forktest_obj',
-  'user/forktest.c',
-  c_args: xv6_o2_c_args,
-  include_directories: root_inc,
-  pic: false,
-)
-
-forktest_elf = custom_target('_forktest',
-  output: '_forktest',
-  input: [
-    forktest_lib.extract_all_objects(recursive: false),
-    ulib_only_lib.extract_all_objects(recursive: false),
-    usys_only_lib.extract_all_objects(recursive: false),
-  ],
-  command: [
-    prog_python, scripts_dir / 'link_user.py',
-    '--ld', prog_ld.full_path(),
-    '--output', '@OUTPUT@',
-    '--objs', '@INPUT@',
-  ],
-  depends: [forktest_lib, ulib_only_lib, usys_only_lib],
-  build_by_default: true,
-)
 
 # ============================================================================
 # Part 7: Host tools (mkfs)
@@ -368,25 +247,8 @@ mkfs_exe = executable('mkfs',
 # Part 8: Filesystem image + disk image
 # ============================================================================
 
-user_prog_names = [
-  '_cat', '_echo', '_forktest', '_grep', '_init',
-  '_kill', '_ln', '_ls', '_mkdir', '_rm', '_sh',
-  '_stressfs', '_usertests', '_wc', '_zombie',
-]
-
-# Build the list of user program ELF paths
-all_user_targets = []
-foreach name : user_prog_names
-  if name == '_forktest'
-    all_user_targets += forktest_elf
-  else
-    all_user_targets += all_user_elfs
-  endif
-endforeach
-
 fs_img = custom_target('fs.img',
   output: 'fs.img',
-  input: [all_user_elfs, forktest_elf],
   command: [
     prog_python, '-c',
     'import shutil, subprocess, sys;
@@ -396,11 +258,8 @@ subprocess.run(sys.argv[2:])',
     mkfs_exe,
     '@OUTPUT@',
     'README',
-    '_cat', '_echo', '_forktest', '_grep', '_init',
-    '_kill', '_ln', '_ls', '_mkdir', '_rm', '_sh',
-    '_stressfs', '_usertests', '_wc', '_zombie',
   ],
-  depends: [mkfs_exe, all_user_elfs, forktest_elf],
+  depends: [mkfs_exe],
   build_by_default: true,
 )
 
@@ -465,7 +324,6 @@ if get_option('build_kernelmemfs')
       entry_lib.extract_all_objects(recursive: false),
       kernel_core_lib.extract_all_objects(recursive: false),
       memide_lib.extract_all_objects(recursive: false),
-      initcode_bin,
       entryother_bin,
       fs_img,
     ],
@@ -477,7 +335,7 @@ if get_option('build_kernelmemfs')
       '@INPUT@',
     ],
     depends: [entry_lib, kernel_core_lib, memide_lib,
-              initcode_bin, entryother_bin, fs_img],
+              entryother_bin, fs_img],
   )
 
   xv6memfs_img = custom_target('xv6memfs.img',

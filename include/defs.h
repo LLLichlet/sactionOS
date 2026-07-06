@@ -22,8 +22,7 @@ void            cprintf(char*, ...);
 void            consoleintr(int(*)(void));
 void            panic(char*) __attribute__((noreturn));
 
-// exec.c
-int             exec(char*, char**);
+// exec.c -- TODO: redesign exec after new syscall interface
 
 // file.c
 struct file*    filealloc(void);
@@ -95,11 +94,7 @@ void            mpinit(void);
 void            picenable(int);
 void            picinit(void);
 
-// pipe.c
-int             pipealloc(struct file**, struct file**);
-void            pipeclose(struct pipe*, int);
-int             piperead(struct pipe*, char*, int);
-int             pipewrite(struct pipe*, char*, int);
+// pipe.c -- TODO: reimplement when adding pipe syscall
 
 //PAGEBREAK: 16
 // proc.c
