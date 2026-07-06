@@ -252,12 +252,12 @@ fs_img = custom_target('fs.img',
   command: [
     prog_python, '-c',
     'import shutil, subprocess, sys;
-shutil.copy2(sys.argv[1], "README");
+shutil.copy2(sys.argv[1], "README.md");
 subprocess.run(sys.argv[2:])',
-    '@CURRENT_SOURCE_DIR@/README',
+    '@CURRENT_SOURCE_DIR@/README.md',
     mkfs_exe,
     '@OUTPUT@',
-    'README',
+    'README.md',
   ],
   depends: [mkfs_exe],
   build_by_default: true,
