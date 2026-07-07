@@ -97,6 +97,7 @@ kernel_core_lib = static_library('kernel_core_objs',
   'kernel/lapic.c',
   'kernel/log.c',
   'kernel/main.c',
+  'kernel/object.c',
   'kernel/mp.c',
   'kernel/picirq.c',
   'kernel/proc.c',
@@ -294,6 +295,27 @@ qemu_base_opts = [
 
 if qemu_extra != ''
   qemu_base_opts += qemu_extra.split()
+endif
+
+prog_clang_format = find_program('clang-format', required: false)
+
+if prog_clang_format.found()
+  run_target('format',
+    command: [
+      prog_python, scripts_dir / 'run_clang_format.py',
+      '--src-root', meson.current_source_dir(),
+      '--clang-format', prog_clang_format.full_path(),
+    ],
+  )
+
+  run_target('check-format',
+    command: [
+      prog_python, scripts_dir / 'run_clang_format.py',
+      '--src-root', meson.current_source_dir(),
+      '--clang-format', prog_clang_format.full_path(),
+      '--check',
+    ],
+  )
 endif
 
 run_target('qemu',

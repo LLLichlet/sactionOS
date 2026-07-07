@@ -13,8 +13,18 @@
 #include "mmu.h"
 #include "proc.h"
 #include "x86.h"
+#include "sysnum.h"
 
-/* Fetch the int at addr from the current process. */
+typedef int (*syscall_fn)(void);
+
+static int sys_debug_print(void);
+static int sys_terminate_process(void);
+
+static syscall_fn syscalls[256] = {
+    [SYS_TERMINATE_PROCESS] = sys_terminate_process,
+    [SYS_DEBUG_PRINT] = sys_debug_print,
+};
+
 int fetchint(uint addr, int* ip)
 {
     struct proc* curproc = myproc();
@@ -25,9 +35,6 @@ int fetchint(uint addr, int* ip)
     return 0;
 }
 
-/* Fetch the nul-terminated string at addr from the current process.
-   Returns length of string, not including nul. *pp points into the
-   process address space. */
 int fetchstr(uint addr, char** pp)
 {
     char *s, *ep;
@@ -44,14 +51,11 @@ int fetchstr(uint addr, char** pp)
     return -1;
 }
 
-/* Fetch the nth 32-bit system call argument. */
 int argint(int n, int* ip)
 {
     return fetchint((myproc()->tf->esp) + 4 + 4 * n, ip);
 }
 
-/* Fetch the nth word-sized system call argument as a pointer
-   to a block of memory of size bytes.  Checks bounds. */
 int argptr(int n, char** pp, int size)
 {
     int i;
@@ -65,7 +69,6 @@ int argptr(int n, char** pp, int size)
     return 0;
 }
 
-/* Fetch the nth system call argument as a string pointer. */
 int argstr(int n, char** pp)
 {
     int addr;
@@ -79,6 +82,28 @@ void syscall(void)
     struct proc* curproc = myproc();
     int num = curproc->tf->eax;
 
-    cprintf("syscall: unknown call %d from pid %s\n", num, curproc->name);
+    if (num >= 0 && num < 256 && syscalls[num]) {
+        int ret = syscalls[num]();
+        curproc->tf->eax = ret;
+        return;
+    }
+
+    cprintf("syscall: unknown call %d from pid %d\n", num, curproc->pid);
     curproc->killed = 1;
+}
+
+static int sys_debug_print(void)
+{
+    char* str;
+
+    if (argstr(0, &str) < 0)
+        return -1;
+    cprintf("%s", str);
+    return 0;
+}
+
+static int sys_terminate_process(void)
+{
+    exit();
+    return 0;
 }

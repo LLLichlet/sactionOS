@@ -26,26 +26,26 @@ enum objtype {
 };
 
 struct object_header {
-    struct object_ops *ops;
+    struct object_ops* ops;
     enum objtype type;
     uint refcnt;
     uint flags;
-    wchar_t *name;
+    wchar_t* name;
 };
 
 #define OBJ_FLAG_NAMED 0x0001
 
 struct object_ops {
-    void (*close)(struct object_header *obj);
-    int (*read)(struct object_header *obj, void *buf, uint size, uint *bytes_read);
-    int (*write)(struct object_header *obj, const void *buf, uint size, uint *bytes_written);
-    int (*signal)(struct object_header *obj, uint arg);
-    int (*query)(struct object_header *obj, uint info_class, void *buf, uint size);
-    int (*set)(struct object_header *obj, uint info_class, const void *buf, uint size);
+    void (*close)(struct object_header* obj);
+    int (*read)(struct object_header* obj, void* buf, uint size, uint* bytes_read);
+    int (*write)(struct object_header* obj, const void* buf, uint size, uint* bytes_written);
+    int (*signal)(struct object_header* obj, uint arg);
+    int (*query)(struct object_header* obj, uint info_class, void* buf, uint size);
+    int (*set)(struct object_header* obj, uint info_class, const void* buf, uint size);
 };
 
 struct handle_entry {
-    struct object_header *obj;
+    struct object_header* obj;
     uint access;
     uint flags;
 };
@@ -55,11 +55,10 @@ struct handle_entry {
 
 #define MAX_HANDLES 64
 
-void obj_acquire(struct object_header *obj);
-void obj_release(struct object_header *obj);
-struct handle_entry *handle_alloc(struct handle_entry *table, struct object_header *obj,
-                                  uint access, uint flags);
-void handle_free(struct handle_entry *table, HANDLE h);
-struct object_header *handle_lookup(struct handle_entry *table, HANDLE h);
+void obj_acquire(struct object_header* obj);
+void obj_release(struct object_header* obj);
+void* handle_alloc(struct handle_entry* table, struct object_header* obj, uint access, uint flags);
+void handle_free(struct handle_entry* table, void* h);
+struct object_header* handle_lookup(struct handle_entry* table, void* h);
 
 #endif

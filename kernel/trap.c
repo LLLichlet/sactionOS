@@ -42,8 +42,10 @@ void idtinit(void)
 void trap(struct trapframe* tf)
 {
     if (tf->trapno == T_SYSCALL) {
-        // TODO: redesign syscall dispatch
         myproc()->tf = tf;
+        syscall();
+        if (myproc()->killed)
+            exit();
         return;
     }
 
