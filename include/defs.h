@@ -22,7 +22,8 @@ void cprintf(char*, ...);
 void consoleintr(int (*)(void));
 void panic(char*) __attribute__((noreturn));
 
-// exec.c -- TODO: redesign exec after new syscall interface
+// exec.c
+int exec_elf_load(struct inode*, pde_t*, uint*, uint*);
 
 // file.c
 struct file* filealloc(void);

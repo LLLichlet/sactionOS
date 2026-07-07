@@ -122,11 +122,33 @@ found:
 
 // PAGEBREAK: 32
 //  Set up first user process.
-//  TODO: redesign after new syscall interface and user-space ABI are defined.
 void userinit(void)
 {
-    // Stub -- no user-space yet.
-    // When ready: allocproc, setupkvm, load init binary, set RUNNABLE.
+    struct proc* p;
+    extern char _binary_initcode_start[], _binary_initcode_size[];
+
+    p = allocproc();
+    initproc = p;
+    if ((p->pgdir = setupkvm()) == 0)
+        panic("userinit: out of memory?");
+    inituvm(p->pgdir, _binary_initcode_start, (uint) _binary_initcode_size);
+    p->sz = PGSIZE;
+
+    memset(p->tf, 0, sizeof(*p->tf));
+    p->tf->cs = (SEG_UCODE << 3) | DPL_USER;
+    p->tf->ds = (SEG_UDATA << 3) | DPL_USER;
+    p->tf->es = p->tf->ds;
+    p->tf->ss = p->tf->ds;
+    p->tf->eflags = FL_IF;
+    p->tf->esp = PGSIZE;
+    p->tf->eip = 0;
+
+    safestrcpy(p->name, "initcode", sizeof(p->name));
+    p->cwd = NULL;
+
+    acquire(&ptable.lock);
+    p->state = RUNNABLE;
+    release(&ptable.lock);
 }
 
 // Grow current process's memory by n bytes.
@@ -216,7 +238,8 @@ void exit(void)
     }
 
     begin_op();
-    iput(curproc->cwd);
+    if (curproc->cwd)
+        iput(curproc->cwd);
     end_op();
     curproc->cwd = 0;
 

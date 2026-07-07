@@ -88,6 +88,7 @@ kernel_core_lib = static_library('kernel_core_objs',
   # Kernel C sources
   'kernel/bio.c',
   'kernel/console.c',
+  'kernel/exec.c',
   'kernel/file.c',
   'kernel/fs.c',
   'kernel/ide.c',
@@ -141,6 +142,29 @@ entryother_bin = custom_target('entryother',
             '@INPUT@', '@OUTPUT@'],
 )
 
+# 4d: initcode (first user process, embedded as raw binary)
+initcode_lib = static_library('initcode_obj',
+  'kernel/initcode.S',
+  c_args: xv6_o2_c_args,
+  include_directories: root_inc,
+  pic: false,
+)
+
+initcode_elf = custom_target('initcode_elf',
+  output: 'initcode_elf',
+  input: initcode_lib.extract_all_objects(recursive: false),
+  command: [prog_ld, '-m', 'elf_i386', '--image-base', '0',
+            '-N', '-e', 'start', '-Ttext', '0',
+            '-o', '@OUTPUT@', '@INPUT@'],
+)
+
+initcode_bin = custom_target('initcode',
+  output: 'initcode',
+  input: initcode_elf,
+  command: [prog_objcopy, '-S', '-O', 'binary', '-j', '.text',
+            '@INPUT@', '@OUTPUT@'],
+)
+
 # 4e: Kernel ELF -- link via ld.lld with kernel.ld, embedding binary blobs
 kernel_ld_script = meson.current_source_dir() / 'kernel.ld'
 
@@ -151,6 +175,7 @@ kernel_elf = custom_target('kernel',
     entry_lib.extract_all_objects(recursive: false),
     kernel_core_lib.extract_all_objects(recursive: false),
     entryother_bin,
+    initcode_bin,
   ],
   command: [
     prog_python, scripts_dir / 'link_kernel.py',
@@ -159,7 +184,7 @@ kernel_elf = custom_target('kernel',
     '--output', '@OUTPUT@',
     '@INPUT@',
   ],
-  depends: [entry_lib, kernel_core_lib, entryother_bin],
+  depends: [entry_lib, kernel_core_lib, entryother_bin, initcode_bin],
 )
 
 # Kernel disassembly (for debugging)
@@ -347,6 +372,7 @@ if get_option('build_kernelmemfs')
       kernel_core_lib.extract_all_objects(recursive: false),
       memide_lib.extract_all_objects(recursive: false),
       entryother_bin,
+      initcode_bin,
       fs_img,
     ],
     command: [
@@ -357,7 +383,7 @@ if get_option('build_kernelmemfs')
       '@INPUT@',
     ],
     depends: [entry_lib, kernel_core_lib, memide_lib,
-              entryother_bin, fs_img],
+              entryother_bin, initcode_bin, fs_img],
   )
 
   xv6memfs_img = custom_target('xv6memfs.img',
