@@ -241,11 +241,19 @@ bootblock = custom_target('bootblock',
 )
 
 # ============================================================================
-# Part 6: User space -- TODO: implement after redesigning syscall interface
+# Part 6: User-space library (saction32.dll, built as static .a for now)
 # ============================================================================
-#
-# No user programs yet.  The kernel will boot and idle in the scheduler
-# waiting for RUNNABLE processes.
+
+# 6a: syscall wrappers (assembly -- must not have C prologue)
+libsaction = static_library('saction',
+  'user/lib/syswrap.S',
+  c_args: xv6_o2_c_args,
+  include_directories: root_inc,
+  pic: false,
+)
+
+# 6b: User programs -- TODO: link against libsaction and emit ELF binaries
+# into fs.img once the full syscall surface is implemented.
 
 
 # ============================================================================
