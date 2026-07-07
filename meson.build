@@ -72,10 +72,22 @@ gen_vectors = custom_target('vectors.S',
 )
 
 # ============================================================================
-# Part 4: Kernel
+# Part 4: User-space library (saction32)
 # ============================================================================
 
-# 4a: Entry object (must come first in link order)
+# 4a: syscall wrappers (assembly -- must not have C prologue)
+libsaction = static_library('saction',
+  'user/lib/syswrap.S',
+  c_args: xv6_o2_c_args,
+  include_directories: root_inc,
+  pic: false,
+)
+
+# ============================================================================
+# Part 5: Kernel
+# ============================================================================
+
+# 5a: Entry object (must come first in link order)
 entry_lib = static_library('entry_obj',
   'kernel/entry.S',
   c_args: xv6_o2_c_args,
@@ -142,26 +154,38 @@ entryother_bin = custom_target('entryother',
             '@INPUT@', '@OUTPUT@'],
 )
 
-# 4d: initcode (first user process, embedded as raw binary)
-initcode_lib = static_library('initcode_obj',
-  'kernel/initcode.S',
+# 4d: init (first user process, compiled C + libsaction, embedded as raw binary)
+init_start_lib = static_library('init_start_obj',
+  'user/init/start.S',
   c_args: xv6_o2_c_args,
   include_directories: root_inc,
   pic: false,
 )
 
-initcode_elf = custom_target('initcode_elf',
-  output: 'initcode_elf',
-  input: initcode_lib.extract_all_objects(recursive: false),
+init_main_lib = static_library('init_main_obj',
+  'user/init/init.c',
+  c_args: xv6_o2_c_args,
+  include_directories: root_inc,
+  pic: false,
+)
+
+init_elf = custom_target('init_elf',
+  output: 'init_elf',
+  input: [
+    init_start_lib.extract_all_objects(recursive: false),
+    init_main_lib.extract_all_objects(recursive: false),
+    libsaction.extract_all_objects(recursive: false),
+  ],
   command: [prog_ld, '-m', 'elf_i386', '--image-base', '0',
-            '-N', '-e', 'start', '-Ttext', '0',
+            '-N', '-e', '_start', '-Ttext', '0',
             '-o', '@OUTPUT@', '@INPUT@'],
+  depends: [libsaction],
 )
 
 initcode_bin = custom_target('initcode',
   output: 'initcode',
-  input: initcode_elf,
-  command: [prog_objcopy, '-S', '-O', 'binary', '-j', '.text',
+  input: init_elf,
+  command: [prog_objcopy, '-S', '-O', 'binary',
             '@INPUT@', '@OUTPUT@'],
 )
 
@@ -241,19 +265,9 @@ bootblock = custom_target('bootblock',
 )
 
 # ============================================================================
-# Part 6: User-space library (saction32.dll, built as static .a for now)
+# Part 6: User programs -- TODO: build additional user ELFs and add to fs.img
 # ============================================================================
 
-# 6a: syscall wrappers (assembly -- must not have C prologue)
-libsaction = static_library('saction',
-  'user/lib/syswrap.S',
-  c_args: xv6_o2_c_args,
-  include_directories: root_inc,
-  pic: false,
-)
-
-# 6b: User programs -- TODO: link against libsaction and emit ELF binaries
-# into fs.img once the full syscall surface is implemented.
 
 
 # ============================================================================

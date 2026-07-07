@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run clang-format on all sactionOS C, H, and assembly sources."""
+"""Run clang-format on all sactionOS C, H"""
 
 import argparse
 import subprocess
@@ -8,7 +8,7 @@ from pathlib import Path
 
 EXTENSIONS = {'.c', '.h'}
 
-DIRS = ['kernel', 'boot', 'include', 'tools']
+DIRS = ['kernel', 'boot', 'include', 'tools', 'user']
 
 
 def run_fmt(src_root: Path, clang_fmt: str, check_only: bool, verbose: bool):
@@ -22,7 +22,7 @@ def run_fmt(src_root: Path, clang_fmt: str, check_only: bool, verbose: bool):
     for d in DIRS:
         dpath = src_root / d
         if dpath.is_dir():
-            for f in dpath.iterdir():
+            for f in dpath.rglob('*'):
                 if f.suffix in EXTENSIONS and f.is_file():
                     files.append(f)
 
