@@ -24,5 +24,7 @@
         int $T_SYSCALL;     \
         ret
 
-SC_WRAP(ScDebugPrint,       SYS_DEBUG_PRINT)
+SC_WRAP(ScCreateObject,     SYS_CREATE_OBJECT)
+SC_WRAP(ScClose,            SYS_CLOSE)
+SC_WRAP(ScWrite,            SYS_WRITE)
 SC_WRAP(ScTerminateProcess, SYS_TERMINATE_PROCESS)

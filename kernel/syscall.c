@@ -14,13 +14,20 @@
 #include "proc.h"
 #include "x86.h"
 #include "sysnum.h"
+#include "object.h"
 
 typedef int (*syscall_fn)(void);
 
 static int sys_debug_print(void);
 static int sys_terminate_process(void);
+static int sys_create_object(void);
+static int sys_write(void);
+static int sys_close(void);
 
 static syscall_fn syscalls[256] = {
+    [SYS_CREATE_OBJECT] = sys_create_object,
+    [SYS_CLOSE] = sys_close,
+    [SYS_WRITE] = sys_write,
     [SYS_TERMINATE_PROCESS] = sys_terminate_process,
     [SYS_DEBUG_PRINT] = sys_debug_print,
 };
@@ -105,5 +112,72 @@ static int sys_debug_print(void)
 static int sys_terminate_process(void)
 {
     exit();
+    return 0;
+}
+
+static int sys_create_object(void)
+{
+    uint type, access;
+    char* name;
+    struct object_header* obj;
+    void* h;
+
+    if (argint(0, (int*) &type) < 0)
+        return -1;
+    if (argstr(1, &name) < 0)
+        return -1;
+    if (argint(2, (int*) &access) < 0)
+        return -1;
+
+    if (type == OBJ_FILE && strncmp(name, "CON:", 4) == 0) {
+        extern struct object_header* obj_console_create(void);
+        obj = obj_console_create();
+    } else {
+        return -1;
+    }
+
+    if (!obj)
+        return -1;
+    h = handle_alloc(myproc()->handles, obj, access, 0);
+    if (!h) {
+        if (obj->ops->close)
+            obj->ops->close(obj);
+        return -1;
+    }
+    return (int) (uintptr_t) h;
+}
+
+static int sys_write(void)
+{
+    int handle_val;
+    uint buf_addr, size;
+    struct object_header* obj;
+    void* h;
+
+    if (argint(0, &handle_val) < 0)
+        return -1;
+    if (argint(1, (int*) &buf_addr) < 0)
+        return -1;
+    if (argint(2, (int*) &size) < 0)
+        return -1;
+
+    if (buf_addr + size < buf_addr || buf_addr + size > myproc()->sz)
+        return -1;
+
+    h = (void*) (uintptr_t) handle_val;
+    obj = handle_lookup(myproc()->handles, h);
+    if (!obj || !obj->ops->write)
+        return -1;
+
+    return obj->ops->write(obj, (const char*) buf_addr, size, NULL);
+}
+
+static int sys_close(void)
+{
+    int handle_val;
+
+    if (argint(0, &handle_val) < 0)
+        return -1;
+    handle_free(myproc()->handles, (void*) (uintptr_t) handle_val);
     return 0;
 }
