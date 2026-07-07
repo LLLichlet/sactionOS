@@ -75,9 +75,11 @@ gen_vectors = custom_target('vectors.S',
 # Part 4: User-space library (saction32)
 # ============================================================================
 
-# 4a: syscall wrappers (assembly -- must not have C prologue)
+# 4a: syscall stubs (internal Sc* wrappers) + public API
 libsaction = static_library('saction',
   'user/lib/syswrap.S',
+  'user/lib/debug.c',
+  'user/lib/proc.c',
   c_args: xv6_o2_c_args,
   include_directories: root_inc,
   pic: false,
